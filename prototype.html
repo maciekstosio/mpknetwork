@@ -1,0 +1,326 @@
+<head>
+    <!-- Load plotly.js into the DOM -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css"
+        integrity="sha512-xwE/Az9zrjBIphAcBb3F6JVqxf46+CDLwfLMHloNu6KEQCAWi6HcDUbeOfBIptF7tcCzusKFjFw2yuvEpDL9wQ=="
+        crossorigin="" />
+    <!-- Make sure you put this AFTER Leaflet's CSS -->
+    <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"
+        integrity="sha512-gZwIG9x3wUXg2hdXF6+rVkLF/0Vi9U8D2Ntg4Ga5I5BZpVkVxlJWbSQtXPSiUTtC0TjtGOmxa1AJPuV0CPthew=="
+        crossorigin=""></script>
+    <!-- Bootstrap -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css"
+        integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"
+        integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
+        integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo"
+        crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"
+        integrity="sha384-OgVRvuATP1z7JjHLkuOU7Xw704+h835Lr+6QL9UvYjZE3Ipu6Tp75j7Bh/kR0JKI"
+        crossorigin="anonymous"></script>
+    <!-- Vue -->
+    <script src="https://cdn.jsdelivr.net/npm/vue"></script>
+    <!--Parsing data-->
+    <script src="https://d3js.org/d3-dsv.v1.min.js"></script>
+    <script src="https://d3js.org/d3-fetch.v1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.15/lodash.min.js"></script>
+    <script src="data/lines_day.js"></script>
+    <script src="data/lines_night.js"></script>
+</head>
+
+<body style="padding: 0; margin: 0;">
+    <div id="app" class="container-fluid">
+        <div class="row">
+            <div class="col-md-2">
+                
+                <div class="btn-group" role="group" style="border: 1px solid #ddd; border-radius: 5px; display: flex; align-items: center; justify-content: center; margin: 20px 0;">
+                    <button type="button" class="btn" v-on:click="setDay()">Dzień</button>
+                    <button type="button" class="btn btn-secondary" v-on:click="setNight()">Noc</button>
+                </div>
+
+                <div>
+                    <label for="max_time">Maks. czas: {{computed_max_time_preview}}</label>
+                    <input type="range" class="custom-range" min="5" max="100" step="5" id="max_time" v-model="max_time">
+                </div>
+
+                <div>
+                    <label for="walk_distance">Maks. odl.: {{computed_walk_distance}}</label>
+                    <input type="range" class="custom-range" min="100" max="1000" step="100" id="walk_distance" v-model="walk_distance">
+                </div>
+
+                <div class="list-group">
+                    <h4>Zaznaczone:</h4>
+                    <div class="list-group-item list-group-item-action" v-for="(layer, index) in layers" v-on:click="removeLayer(index)">
+                        <h5 class="mb-1">{{ layer.name }}</h5>
+                        <b>Linie: </b>
+                        <div>
+                            <span v-for="line in layer.selected_lines">{{line}},</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-10" style="padding: 0">
+                <!-- The map goes here -->
+                <div id="map" style="height: 100%"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+            var R = 6371; // Radius of the earth in km
+            var dLat = deg2rad(lat2 - lat1);  // deg2rad below
+            var dLon = deg2rad(lon2 - lon1);
+            var a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2)
+                ;
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            var d = R * c; // Distance in km
+            return d;
+        }
+
+        function deg2rad(deg) {
+            return deg * (Math.PI / 180)
+        }
+
+        const prepare = (lines) => {
+            return Object.keys(lines).reduce((acc, curr) => {
+                return {
+                    ...acc,
+                    [curr]: lines[curr].reduce((acc, curr) => {
+                        return {
+                            ...acc,
+                            [curr[0]]: parseFloat(curr[1]),
+                        }
+                    }, {})
+                }
+            }, {})
+        }
+
+        const main = async () => {
+            try {
+                const colorForTime = (time) => {
+                    if (time <=5) return "#0aa11e"
+                    if (time <=10) return "#1ee839"
+                    if (time <=15) return "#91ff00"
+                    if (time <=20) return "#d9ff00"
+                    if (time <=25) return "#fff700"
+                    if (time <=30) return "#ffd500"
+                    if (time <=35) return "#ffa200"
+                    if (time <=40) return "#ff7b00"
+                    if (time <=45) return "#ff4d00"
+                    if (time <=55) return "#c20000"
+                    if (time <=50) return "#ff1900"
+                    return "#8f0000"
+                } 
+
+                const colorForLayers = (time) => {
+                    switch(time) {
+                        case 0: return "#34c9eb"
+                        case 1: return "#fcfc0f"
+                        case 2: return "#00ff08"
+                        case 3: return "#ff1900"
+                        default: return "#f0f"
+                    }
+                } 
+
+                const network = await d3.csv("data/network-v1.csv")
+                const coords = await d3.csv("data/coords-v1.csv")
+                const metrics = await d3.csv("data/metrics.csv")
+
+                const coords_map = coords.reduce((acc, curr) => ({
+                    ...acc,
+                    [curr.stop]: curr
+                }), {})
+
+                const lines = {
+                    night: prepare(lines_night),
+                    day: prepare(lines_day),
+                }
+
+                const app = new Vue({
+                    el: '#app',
+                    data: {
+                        distanceScale: 0,
+                        time: "day",
+                        max_time: 100,
+                        walk_distance: 100,
+                        map: null,
+                        baseLayer: null,
+                        stops: [],
+                        layers: []
+                    },
+                    methods: {
+                        updateZoom: function() {
+                            const centerLatLng = this.map.getCenter() // get map center
+                            const pointC = this.map.latLngToContainerPoint(centerLatLng) // convert to containerpoint (pixels)
+                            const pointX = [pointC.x + 1, pointC.y] // add one pixel to x
+                            const pointY = [pointC.x, pointC.y + 1] // add one pixel to y
+
+                            // convert containerpoints to latlng's
+                            const latLngC = this.map.containerPointToLatLng(pointC)
+                            const latLngX = this.map.containerPointToLatLng(pointX)
+                            const latLngY = this.map.containerPointToLatLng(pointY)
+
+                            const distanceX = latLngC.distanceTo(latLngX) // calculate distance between c and x (latitude)
+                            const distanceY = latLngC.distanceTo(latLngY) // calculate distance between c and y (longitude)
+                            //1px ~ distanceX, px * distanceX = distance_for_pixels
+                            this.distanceScale = 1/distanceX
+                            this.layers.forEach((_, index) => this.refreashLayer(index))
+                        },
+                        setDay: function() {
+                            if (this.time !== "day") {
+                                this.time = "day"
+                                this.setTheme(true)
+                                this.layers.forEach((_, index) => this.hideLayer(index))
+                                this.layers = []
+                            }
+                        },
+                        setNight: function() {
+                            if (this.time !== "night") {
+                                this.time = "night"
+                                this.setTheme(false)
+                                this.layers.forEach((_, index) => this.hideLayer(index))
+                                this.layers = []
+                            }
+                        },
+                        hideLayer: function(layerIndex) {
+                            this.layers[layerIndex].markers.forEach(stop => stop.remove())
+                        },
+                        refreashLayer: function(layerIndex) {
+                            this.layers[layerIndex].markers.forEach(stop => stop.remove())
+                            this.showLayer(layerIndex)
+                        },
+                        removeLayer: function(layerIndex) {
+                            this.hideLayer(layerIndex)
+                            this.layers.splice(layerIndex, 1)
+                            this.fixFirstLayer()
+                        },
+                        fixFirstLayer: function() {
+                            if (this.layers.length > 0) {
+                                this.hideLayer(0)
+                                this.showLayer(0)
+                            }
+                        },
+                        onClick: function (stop) {
+                            const possible_lines = lines[this.time]
+                            const lines_containing_selected_stop = Object.keys(possible_lines).filter(line => possible_lines[line][stop] !== undefined)
+
+                            const normLine = (curr) => {
+                                const stops = possible_lines[curr] 
+                                const selected_stop_time = stops[stop]
+                                
+                                return Object.keys(stops).reduce((acc, curr) => ({
+                                    ...acc,
+                                    [curr]: Math.abs(stops[curr] - selected_stop_time)
+                                }), {})
+                            }
+
+                            if(lines_containing_selected_stop.length > 0) {
+                                this.layers.push({
+                                    name: stop,
+                                    selected_lines: lines_containing_selected_stop,
+                                    stops: lines_containing_selected_stop.reduce((acc, curr) => ({
+                                        ...acc,
+                                        ...normLine(curr),
+                                    }), {}),
+                                    markers: [],
+                                })
+
+                                this.showLayer(this.layers.length - 1)
+                                this.fixFirstLayer()
+                            } else {
+                                alert("Brak lini")
+                            }
+                        },
+                        showLayer: function(layerIndex) {
+                            const hasMoreLayers = this.layers.length > 1
+                            const layer = this.layers[layerIndex]
+                            const base_time = layer.stops[layer.name]
+                            this.layers[layerIndex].markers = Object.keys(layer.stops).map(stop => {
+                                const stop_time = layer.stops[stop]
+                                const { lattitude, longitude } = coords_map[stop]
+
+                                if (Math.abs(base_time - stop_time) < this.computed_max_time) {
+                                    return L.circleMarker([lattitude, longitude], {
+                                        radius: this.distanceScale * this.walk_distance,
+                                        stroke: false,
+                                        color: hasMoreLayers ? colorForLayers(layerIndex) : colorForTime(Math.abs(base_time - stop_time)),
+                                        fillOpacity: 100/this.walk_distance,
+                                    })
+                                    .on('click', () => this.onClick(stop))
+                                    .addTo(this.map)
+                                }
+                                
+                                return null
+                            }).filter(Boolean)
+                        },
+                        setTheme: function(isLight) {
+                            const map_style = isLight ? 'mapbox/light-v9' : 'mapbox/dark-v9'
+                            const marker_color = isLight ? '#222' : '#71c2f6'
+
+                            this.stops.forEach(stop => stop.remove())
+
+                            this.baseLayer = L.tileLayer('https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={accessToken}', {
+                                attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+                                maxZoom: 18,
+                                id: map_style,
+                                tileSize: 512,
+                                zoomOffset: -1,
+                                accessToken: 'pk.eyJ1IjoibWFjaWtlcmEiLCJhIjoiY2s5Yms2czhnMDRvdTNtczN4dzV2YjhubSJ9.9fzPyd3DeeVGNZ2SsuE2bQ'
+                            })
+
+                            this.baseLayer.addTo(this.map)
+
+                            this.stops = coords.map(({ lattitude, longitude, stop }) => L.circleMarker([lattitude, longitude], {
+                                    radius: 2,
+                                    stroke: false,
+                                    fillOpacity: 1.0,
+                                    color: marker_color,
+                                })
+                                // .bindPopup(stop)
+                                .addTo(this.map)
+                                .on('click', () => this.onClick(stop))
+                            )
+                        },
+                    },
+                    computed: {
+                        computed_max_time: function () {
+                            return this.max_time >= 100 ? Infinity : this.max_time
+                        },
+                        computed_max_time_preview: function () {
+                            return this.max_time >= 100 ? "∞" : this.max_time + " min"
+                        },
+                        computed_walk_distance: function() {
+                            return Math.round(this.walk_distance/100)/10 + "km"
+                        }
+                    },
+                    watch: {
+                        computed_max_time: function(newTime) {
+                            this.layers.forEach((_, index) => {
+                                this.hideLayer(index)
+                                this.showLayer(index)
+                            })
+                        },
+                        walk_distance: function() {
+                            this.layers.forEach((_, index) => this.refreashLayer(index))
+                        }
+                    },
+                    mounted() {
+                        this.map = L.map('map').setView([51.108004, 17.039528], 12)
+                        this.setTheme(true)
+                        this.updateZoom()
+                        this.map.on('zoomend', this.updateZoom)
+                    }
+                })
+            } catch (err) {
+                console.log("Error", err)
+            }
+        }
+
+        main()
+    </script>
+</body>
