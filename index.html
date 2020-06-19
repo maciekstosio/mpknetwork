@@ -52,14 +52,13 @@
                     <div class="list-group-item list-group-item-action" v-for="(layer, index) in layers" v-on:click="removeLayer(index)">
                         <h5 class="mb-1">{{ layer.name }}</h5>
                         <b>Linie: </b>
-                        <div>
+                        <div style="overflow-wrap: break-word;">
                             <span v-for="line in layer.selected_lines">{{line}},</span>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="col-md-10" style="padding: 0">
-                <!-- The map goes here -->
                 <div id="map" style="height: 100%"></div>
             </div>
         </div>

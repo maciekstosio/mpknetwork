@@ -180,7 +180,7 @@ const main = async () => {
                         id: map_style,
                         tileSize: 512,
                         zoomOffset: -1,
-                        accessToken: 'pk.eyJ1IjoibWFjaWtlcmEiLCJhIjoiY2tibGZ2MzZlMTg3djMxcGp4Z2s1MDMyMCJ9.Mi6Uz6OF7gQnWe_p65Bgyw'
+                        accessToken: 'sk.eyJ1IjoibWFjaWtlcmEiLCJhIjoiY2tibGdvaHVzMDBlcTMycDd1dTFhbHkzYyJ9.TsTlXgoGuUTqitJktEMaiQ'
                     })
 
                     this.baseLayer.addTo(this.map)
