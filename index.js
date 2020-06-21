@@ -186,7 +186,7 @@ const main = async () => {
                     this.baseLayer.addTo(this.map)
 
                     this.stops = coords.map(({ lattitude, longitude, stop }) => L.circleMarker([lattitude, longitude], {
-                            radius: 2,
+                            radius: 4,
                             stroke: false,
                             fillOpacity: 1.0,
                             color: marker_color,
